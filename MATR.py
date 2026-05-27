@@ -1,4 +1,5 @@
 import re
+import os
 
 class NodoMatriz:
     def __init__(self, fila, columna, color):
@@ -146,6 +147,17 @@ class MatrizDispersa:
             nuevo_nodo.arriba = actual
             actual.abajo = nuevo_nodo
 
+    def obtener_pixeles(self):
+        pixeles = []
+        fila_actual = self.filas.primero
+        while fila_actual:
+            nodo_actual = fila_actual.acceso
+            while nodo_actual:
+                pixeles.append((nodo_actual.fila, nodo_actual.columna, nodo_actual.color))
+                nodo_actual = nodo_actual.derecha
+            fila_actual = fila_actual.siguiente
+        return pixeles
+
 class ArbolCapas:
     def __init__(self):
         self.raiz = None
@@ -171,6 +183,41 @@ class ArbolCapas:
         if id_capa < actual.id_capa:
             return self._buscar_recursivo(actual.izquierdo, id_capa)
         return self._buscar_recursivo(actual.derecho, id_capa)
+
+    def obtener_preorden(self, limite):
+        resultado = []
+        self._preorden(self.raiz, limite, resultado)
+        return resultado
+
+    def _preorden(self, nodo, limite, resultado):
+        if nodo and len(resultado) < limite:
+            resultado.append(nodo)
+            self._preorden(nodo.izquierdo, limite, resultado)
+            self._preorden(nodo.derecho, limite, resultado)
+
+    def obtener_inorden(self, limite):
+        resultado = []
+        self._inorden(self.raiz, limite, resultado)
+        return resultado
+
+    def _inorden(self, nodo, limite, resultado):
+        if nodo and len(resultado) < limite:
+            self._inorden(nodo.izquierdo, limite, resultado)
+            if len(resultado) < limite:
+                resultado.append(nodo)
+            self._inorden(nodo.derecho, limite, resultado)
+
+    def obtener_postorden(self, limite):
+        resultado = []
+        self._postorden(self.raiz, limite, resultado)
+        return resultado
+
+    def _postorden(self, nodo, limite, resultado):
+        if nodo and len(resultado) < limite:
+            self._postorden(nodo.izquierdo, limite, resultado)
+            self._postorden(nodo.derecho, limite, resultado)
+            if len(resultado) < limite:
+                resultado.append(nodo)
 
 class ListaImagenes:
     def __init__(self):
@@ -277,7 +324,7 @@ class CargaMasiva:
                             if capa_ref:
                                 nodo_img.agregar_capa(capa_ref)
                             else:
-                                print(f"Advertencia: Capa {cid} no existe. No se enlazó a la imagen {id_img}.")
+                                print(f"Advertencia: Capa {cid} no existe.")
             print(f"Carga de imágenes completada exitosamente desde '{ruta_archivo}'.")
         except Exception as e:
             print(f"Error al cargar imágenes: {e}")
@@ -299,3 +346,104 @@ class CargaMasiva:
             print(f"Carga de usuarios completada exitosamente desde '{ruta_archivo}'.")
         except Exception as e:
             print(f"Error al cargar usuarios: {e}")
+
+class GeneradorImagenes:
+    @staticmethod
+    def _renderizar_html(lista_capas_nodos, nombre_salida):
+        if not lista_capas_nodos:
+            print("No hay capas para generar la imagen.")
+            return
+
+        mapa_pixeles = {}
+        max_fila = 0
+        max_col = 0
+
+        for nodo_capa in lista_capas_nodos:
+            pixeles = nodo_capa.matriz.obtener_pixeles()
+            for fila, col, color in pixeles:
+                mapa_pixeles[(fila, col)] = color
+                if fila > max_fila: max_fila = fila
+                if col > max_col: max_col = col
+
+        if max_fila == 0 and max_col == 0:
+            max_fila = 1
+            max_col = 1
+            mapa_pixeles[(1, 1)] = "#000000"
+
+        html_content = "<html>\n<head><title>Imagen Generada</title></head>\n"
+        html_content += "<body style='background-color: gray; display: flex; justify-content: center; align-items: center; height: 100vh;'>\n"
+        html_content += "<table style='border-collapse: collapse;'>\n"
+
+        for i in range(1, max_fila + 1):
+            html_content += "  <tr>\n"
+            for j in range(1, max_col + 1):
+                color = mapa_pixeles.get((i, j), "#FFFFFF")
+                html_content += f"    <td style='width: 20px; height: 20px; background-color: {color};'></td>\n"
+            html_content += "  </tr>\n"
+        
+        html_content += "</table>\n</body>\n</html>"
+
+        os.makedirs("imagenes_generadas", exist_ok=True)
+        ruta = f"imagenes_generadas/{nombre_salida}.html"
+        with open(ruta, "w", encoding='utf-8') as f:
+            f.write(html_content)
+        print(f"Imagen '{nombre_salida}' generada exitosamente.")
+
+    @classmethod
+    def por_recorrido_limitado(cls, arbol_capas, tipo, limite):
+        capas = []
+        if tipo.lower() == "preorden":
+            capas = arbol_capas.obtener_preorden(limite)
+        elif tipo.lower() == "inorden":
+            capas = arbol_capas.obtener_inorden(limite)
+        elif tipo.lower() == "postorden":
+            capas = arbol_capas.obtener_postorden(limite)
+        else:
+            print("Tipo de recorrido no válido.")
+            return
+        
+        cls._renderizar_html(capas, f"recorrido_{tipo}_{limite}")
+
+    @classmethod
+    def por_lista_imagenes(cls, lista_imagenes, id_imagen):
+        nodo_img = lista_imagenes.buscar(id_imagen)
+        if not nodo_img:
+            print(f"La imagen {id_imagen} no existe.")
+            return
+
+        capas = []
+        actual = nodo_img.capas_head
+        while actual:
+            capas.append(actual.capa_ref)
+            actual = actual.siguiente
+        
+        cls._renderizar_html(capas, f"imagen_{id_imagen}")
+
+    @classmethod
+    def por_capa(cls, arbol_capas, id_capa):
+        nodo_capa = arbol_capas.buscar(id_capa)
+        if not nodo_capa:
+            print(f"La capa {id_capa} no existe.")
+            return
+        cls._renderizar_html([nodo_capa], f"capa_{id_capa}")
+
+    @classmethod
+    def por_usuario(cls, arbol_usuarios, lista_imagenes, nombre_usuario, id_imagen):
+        nodo_usr = arbol_usuarios.buscar(nombre_usuario)
+        if not nodo_usr:
+            print(f"El usuario '{nombre_usuario}' no existe.")
+            return
+        
+        actual_img = nodo_usr.imagenes_head
+        tiene_imagen = False
+        while actual_img:
+            if actual_img.id_imagen == id_imagen:
+                tiene_imagen = True
+                break
+            actual_img = actual_img.siguiente
+            
+        if not tiene_imagen:
+            print(f"El usuario '{nombre_usuario}' no tiene la imagen {id_imagen}.")
+            return
+            
+        cls.por_lista_imagenes(lista_imagenes, id_imagen)
